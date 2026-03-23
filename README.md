@@ -1,34 +1,43 @@
-# Lutris Quick Add for KDE Plasma & Other Desktops
+# Lutris Quick Add
 
 A universal Bash script that allows you to add Windows executables (`.exe`) directly to your Lutris library with a right-click from your file manager.
 
-Designed for **KDE Plasma** but fully compatible with **GNOME**, **Cinnamon**, and other environments via Nautilus Scripts or terminal.
+It automates the boring parts: fetching official artwork from Steam, extracting high-quality icons, configuring a centralized Wine prefix, and creating desktop shortcuts.
+
+## Project Files
+
+Before installing, understand what each file does:
+
+*   **`add_to_lutris.sh`**: The core script. It handles the logic (downloading art, extracting icons, editing the Lutris database, creating shortcuts). **You always need this file.**
+*   **`add_to_lutris.desktop`**: A Service Menu file specifically for the **Dolphin** file manager (KDE). It tells Dolphin to show the "Add to Lutris" option in the right-click menu. **Only needed if you use Dolphin.**
 
 ## Features
 
+*   **Steam Artwork Integration:** Automatically searches Steam for the game name and downloads the official Banner and Cover Art. No more blank covers!
+*   **Smart Icon Handling:** Extracts the highest resolution icon from the executable, resizes it to 128x128 (Lutris standard), and installs it into the system icon theme for perfect integration.
 *   **Universal Compatibility:** Works on Native and Flatpak installations of Lutris.
-*   **Desktop Environment Agnostic:** Supports `kdialog` (KDE) and `zenity` (GNOME/Others) for GUI prompts (fallback to terminal if none found).
-*   **Interactive Naming:** Prompts for the game name (pre-filled from filename) to ensure correct banner art matching in Lutris.
-*   **High-Quality Icons:** Automatically extracts the highest resolution icon available from the executable.
-*   **Desktop Shortcuts:** Creates a launch shortcut on your desktop automatically.
+*   **Desktop Environment Agnostic:** Supports `kdialog` (KDE) and `zenity` (GNOME/Others) for GUI prompts, with a terminal fallback.
+*   **Interactive Naming:** Prompts for the game name to ensure accurate matching for artwork.
 *   **Centralized Prefix:** Uses a standard Wine prefix path (`$HOME/Games/Lutris/Prefixes/Default`) to keep your system organized.
-*   **Zero Hardcoded Paths:** Works for any user out of the box.
 
 ## Prerequisites
 
 Make sure you have the following dependencies installed:
 
-*   `sqlite3`
-*   `icoutils` (provides `wrestool` and `icotool` for icon extraction)
+1.  `sqlite3`
+2.  `icoutils` (provides `wrestool` and `icotool`)
+3.  `jq` (required for parsing Steam API data)
+4.  `curl` (usually pre-installed)
+5.  `imagemagick` (optional, recommended for high-quality icon resizing)
 
 **Arch Linux / CachyOS / Manjaro:**
 ```bash
-sudo pacman -S sqlite3 icoutils
+sudo pacman -S sqlite3 icoutils jq imagemagick
 ```
 
 **Debian / Ubuntu / KUbuntu:**
 ```bash
-sudo apt install sqlite3 icoutils
+sudo apt install sqlite3 icoutils jq imagemagick
 ```
 
 **Optional (for GUI dialogs):**
@@ -39,76 +48,85 @@ sudo apt install sqlite3 icoutils
 
 ### Step 1: Install the Script
 
-First, place the script in a local binary folder.
+First, place the script in a local binary folder and make it executable.
 
 ```bash
 mkdir -p ~/.local/bin
-cp add_to_lutris.sh ~/.local/bin/add_to_lutris.sh
+cp path/to/add_to_lutris.sh ~/.local/bin/add_to_lutris.sh
 chmod +x ~/.local/bin/add_to_lutris.sh
 ```
 
-### Step 2: Integrate with your Desktop Environment
+### Step 2: Integrate with your File Manager
 
-Choose the method that fits your Desktop Environment (DE).
+Choose the instructions specific to the **File Manager** you use, regardless of your Desktop Environment.
 
-#### Option A: KDE Plasma (Dolphin)
-This creates a dedicated entry in the right-click menu.
+#### Option A: Dolphin
+*Uses the `.desktop` file.*
 
-1.  Place the service menu file:
+1.  Place the add_to_lutris.desktop file:
     ```bash
     mkdir -p ~/.local/share/kio/servicemenus
-    cp add_to_lutris.desktop ~/.local/share/kio/servicemenus/
-    ```
-2.  Update KDE System Configuration Cache:
-    ```bash
-    kbuildsycoca6 --noincremental
+    cp path/to/add_to_lutris.desktop ~/.local/share/kio/servicemenus/
     ```
 
-#### Option B: GNOME (Nautilus) & Cinnamon (Nemo)
-This adds the script to the "Scripts" submenu in the right-click menu.
+#### Option B: Nautilus (GNOME) & Nemo (Cinnamon) - not tested
+*Uses the script directly via the "Scripts" folder.*
 
-1.  Ensure `zenity` is installed (`sudo apt install zenity` or `sudo pacman -S zenity`).
+1.  Ensure `zenity` is installed.
 2.  Create the scripts directory and link the script:
     ```bash
     # For GNOME (Nautilus)
     mkdir -p ~/.local/share/nautilus/scripts
     ln -s ~/.local/bin/add_to_lutris.sh ~/.local/share/nautilus/scripts/Add\ to\ Lutris
 
-    # For Cinnamon (Nemo) - if different from Nautilus
+    # For Cinnamon (Nemo)
     mkdir -p ~/.local/share/nemo/scripts
     ln -s ~/.local/bin/add_to_lutris.sh ~/.local/share/nemo/scripts/Add\ to\ Lutris
     ```
-3.  Restart the file manager (optional, but recommended):
+3.  Restart the file manager:
     ```bash
     nautilus -q
     # OR
     nemo -q
     ```
 
-#### Option C: Hyprland / Wayland / Other Compositors
-If you use a standalone Window Manager (Hyprland, Sway, i3) or a different File Manager (Thunar, PCManFM):
+#### Option C: Thunar (XFCE) - not tested
+*Uses "Custom Actions".*
 
-1.  **Thunar (XFCE):** Go to `Edit` -> `Configure custom actions` -> Add a new action pointing to `/home/$USER/.local/bin/add_to_lutris.sh %f`.
-2.  **Terminal:** You can simply run the script manually from the terminal passing the .exe path as an argument:
-    ```bash
-    ~/.local/bin/add_to_lutris.sh /path/to/game.exe
-    ```
+1.  Open Thunar and go to `Edit` -> `Configure custom actions`.
+2.  Click the "Add" button (+).
+3.  **Command:** `/home/YOUR_USERNAME/.local/bin/add_to_lutris.sh %f` (replace `YOUR_USERNAME` with your actual username).
+4.  **Name:** Add to Lutris.
+5.  **File Pattern:** `*.exe`
+6.  **Appearance Conditions:** Check "Other files".
+
+#### Option D: Terminal / Other Managers
+If you use a standalone Window Manager (Hyprland, Sway, i3) or a different file manager that doesn't support scripts easily:
+
+You can simply run the script manually from the terminal:
+```bash
+~/.local/bin/add_to_lutris.sh "/path/to/game.exe"
+```
+Or if `~/.local/bin/` is in your path you can just do:
+```bash
+add_to_lutris.sh "/path/to/game.exe"
+```
 
 ## Usage
 
-1.  Open your File Manager (Dolphin, Nautilus, etc.).
+1.  Open your File Manager.
 2.  Right-click any `.exe` file.
-    *   **KDE:** Select **"Add to Lutris"**.
-    *   **GNOME:** Select **Scripts** -> **Add to Lutris**.
-3.  Enter the desired game name in the popup dialog.
-4.  The game will appear in your Lutris library, and a shortcut will be created on your desktop.
+    *   **Dolphin:** Select **"Add to Lutris"**.
+    *   **Nautilus/Nemo:** Select **Scripts** -> **Add to Lutris**.
+3.  Enter the desired game name in the popup dialog (pre-filled from filename).
+4.  Done! The game will appear in Lutris with official artwork and a desktop shortcut.
 
 ## Configuration
 
 By default, the script uses a centralized Wine prefix located at:
 `$HOME/Games/Lutris/Prefixes/Default`
 
-If you want to use a different path, open `add_to_lutris.sh` and edit the `CUSTOM_PREFIX` variable:
+To use a different path, edit the `CUSTOM_PREFIX` variable inside `add_to_lutris.sh`:
 
 ```bash
 # --- CUSTOM WINE PREFIX CONFIGURATION ---
