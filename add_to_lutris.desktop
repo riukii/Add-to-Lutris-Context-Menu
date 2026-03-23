@@ -7,4 +7,4 @@ X-KDE-Priority=TopLevel
 [Desktop Action addToLutris]
 Name=Add to Lutris
 Icon=net.lutris.Lutris
-Exec="/home/$USER/.local/bin/add_to_lutris.sh" %f
+Exec="$HOME/.local/bin/add_to_lutris.sh" %f
