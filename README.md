@@ -4,7 +4,7 @@ A universal Bash script that allows you to add Windows executables (`.exe`) dire
 
 It automates the boring parts: fetching official artwork from Steam, extracting high-quality icons, configuring a centralized Wine prefix, and creating desktop shortcuts.
 
-**New in this version:** The script now supports **two launch modes**. You can choose between **Offline Mode** for offline games or **Online-Fix Mode** for steam-online games via a user-friendly dialog.
+**New in this version:** The script now supports **two launch modes**. You can choose between **Offline Mode** for offline games or **Online-Fix Mode** for online-fix (and similar emulators' games) via a user-friendly dialog.
 
 ## Project Files
 
