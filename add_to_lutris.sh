@@ -32,19 +32,19 @@ if command -v kdialog &> /dev/null; then
         exit 0
     fi
 
-    # Step 2: Ask for Mode (Three buttons: Yes=Offline, No=Online, Cancel=Abort)
+    # Step 2: Ask for Mode (Three buttons: Yes=Standard, No=Online, Cancel=Abort)
     kdialog --title "Select Mode" \
             --yesnocancel "Choose launch mode for '$INPUT_NAME':" \
-            --yes-label "Offline" \
+            --yes-label "Standard" \
             --no-label "Online-Fix" \
             --cancel-label "Abort"
 
     RET=$?
     if [ $RET -eq 0 ]; then
-        # Clicked "Offline (Wine)" (Yes button - Default focus)
-        MODE="offline"
+        # Clicked "Standard" (Yes button - Default focus)
+        MODE="standard"
     elif [ $RET -eq 1 ]; then
-        # Clicked "Online-Fix (Proton)" (No button)
+        # Clicked "Online-Fix" (No button)
         MODE="online"
     else
         # Clicked "Abort" or closed window (Cancel button)
@@ -53,16 +53,16 @@ if command -v kdialog &> /dev/null; then
 
 # 2. Fallback to Zenity (GNOME/others)
 elif command -v zenity &> /dev/null; then
-    # Zenity logic: OK=Offline (Default), Extra=Online, Cancel=Abort
-    ZENITY_OUT=$(zenity --entry --title="Add to Lutris" --text="Enter game name:" --entry-text="$PRETTY_NAME" --ok-label="Offline" --cancel-label="Abort" --extra-button="Online-Fix")
+    # Zenity logic: OK=Standard (Default), Extra=Online, Cancel=Abort
+    ZENITY_OUT=$(zenity --entry --title="Add to Lutris" --text="Enter game name:" --entry-text="$PRETTY_NAME" --ok-label="Standard" --cancel-label="Abort" --extra-button="Online-Fix")
     ZENITY_CODE=$?
 
     if [ $ZENITY_CODE -eq 0 ]; then
-        # Clicked "Offline (Wine)" (OK)
-        MODE="offline"
+        # Clicked "Standard" (OK)
+        MODE="standard"
         INPUT_NAME="$ZENITY_OUT"
     elif [ "$ZENITY_OUT" == "Online-Fix" ]; then
-        # Clicked "Online-Fix (Proton)" (Extra)
+        # Clicked "Online-Fix" (Extra)
         MODE="online"
         INPUT_NAME="$PRETTY_NAME" # Fallback because extra button doesn't return input
     else
@@ -73,8 +73,8 @@ elif command -v zenity &> /dev/null; then
 else
     # Terminal fallback
     read -p "Enter game name [$PRETTY_NAME]: " INPUT_NAME
-    read -p "Mode (1=Offline, 2=Online-Fix) [1]: " MODE_SEL
-    if [ "$MODE_SEL" == "2" ]; then MODE="online"; else MODE="offline"; fi
+    read -p "Mode (1=Standard, 2=Online-Fix) [1]: " MODE_SEL
+    if [ "$MODE_SEL" == "2" ]; then MODE="online"; else MODE="standard"; fi
 fi
 
 GAME_NAME="${INPUT_NAME:-$PRETTY_NAME}"
@@ -176,7 +176,7 @@ RUNNER=""
 CONFIG_EXE=""
 
 if [ "$MODE" = "online" ]; then
-    # === ONLINE MODE (Proton) ===
+    # === ONLINE-FIX MODE ===
     RUNNER_SCRIPT="$GAME_DIR/add_to_lutris_online_run.sh"
 
     cat <<EOF > "$RUNNER_SCRIPT"
@@ -216,7 +216,7 @@ slug: '$SLUG'
 EOF
 
 else
-    # === OFFLINE MODE (Wine) ===
+    # === STANDARD MODE ===
     CONFIG_EXE="$EXE_PATH"
     RUNNER="wine"
 
