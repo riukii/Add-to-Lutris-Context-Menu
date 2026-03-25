@@ -4,7 +4,7 @@ A universal Bash script that allows you to add Windows executables (`.exe`) dire
 
 It automates the boring parts: fetching official artwork from Steam, extracting high-quality icons, configuring a centralized Wine prefix, and creating desktop shortcuts.
 
-**New in this version:** The script now supports **two launch modes**. You can choose between **Offline Mode** for offline games or **Online-Fix Mode** for online-fix (and similar emulators' games) via a user-friendly dialog.
+**New in this version:** The script now supports **two launch modes**. You can choose between **Standard Mode** or **Online-Fix Mode** for online-fix and similar emulators' games via a user-friendly dialog.
 
 ## Project Files
 
@@ -16,9 +16,9 @@ Before installing, understand what each file does:
 ## Features
 
 *   **Dual Launch Modes:**
-    *   **Offline:** Standard Lutris configuration using the Proton runner.
+    *   **Standard:** Standard Lutris configuration using the Proton runner.
     *   **Online-Fix:** Creates a launch script using Steam Runtime and Proton, added to Lutris as a "Linux" runner. Perfect for multiplayer fixes.
-*   **Interactive Mode Selection:** A graphical dialog allows you to choose the mode (Offline, Online-Fix, or Abort) after naming the game.
+*   **Interactive Mode Selection:** A graphical dialog allows you to choose the mode (Standard, Online-Fix, or Abort) after naming the game.
 *   **Steam Artwork Integration:** Automatically searches Steam for the game name and downloads the official Banner and Cover Art. No more blank covers!
 *   **Smart Icon Handling:** Extracts the highest resolution icon from the executable, resizes it to 128x128 (Lutris standard), and installs it into the system icon theme for perfect integration.
 *   **Universal Compatibility:** Works on Native and Flatpak installations of Lutris.
@@ -129,7 +129,7 @@ add_to_lutris.sh "/path/to/game.exe"
     *   **Nautilus/Nemo:** Select **Scripts** -> **Add to Lutris**.
 3.  **Enter Game Name:** A dialog will appear with a suggested name. Edit it if needed and confirm.
 4.  **Select Mode:** A second dialog will ask you to choose the launch mode:
-    *   **Offline:** Default selection. Configures the game to run with standard Wine.
+    *   **Standard:** Default selection. Configures the game to run with standard Wine.
     *   **Online-Fix:** Configures the game to run with Proton with fixes to make online-fix work via a generated `.sh` script.
     *   **Abort:** Cancels the operation.
 5.  Done! The game will appear in Lutris with official artwork and a desktop shortcut.
