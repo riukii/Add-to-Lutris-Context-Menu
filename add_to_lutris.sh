@@ -13,19 +13,68 @@ if [ -z "$1" ]; then
 fi
 
 EXE_PATH=$(readlink -f "$1")
+GAME_DIR=$(dirname "$EXE_PATH")
 RAW_NAME=$(basename "$EXE_PATH" .exe)
 
 # Prettify Logic
 PRETTY_NAME=$(echo "$RAW_NAME" | tr '_-' ' ' | sed -E 's/([a-z])([A-Z])/\1 \2/g' | tr -s ' ' | sed 's/^[[:space:]]//;s/[[:space:]]$//' | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)}1')
 
+# --- DIALOG WITH BUTTONS (KDE PRIORITY) ---
+MODE=""
+
+# 1. Check KDialog FIRST (Native KDE)
 if command -v kdialog &> /dev/null; then
+    # Step 1: Ask for Name (Standard Ok/Cancel dialog)
     INPUT_NAME=$(kdialog --title "Add to Lutris" --inputbox "Enter game name:" "$PRETTY_NAME")
-    [ $? -ne 0 ] && exit 0
+
+    # If user cancels the name input, exit immediately
+    if [ $? -ne 0 ]; then
+        exit 0
+    fi
+
+    # Step 2: Ask for Mode (Three buttons: Yes=Offline, No=Online, Cancel=Abort)
+    kdialog --title "Select Mode" \
+            --yesnocancel "Choose launch mode for '$INPUT_NAME':" \
+            --yes-label "Offline" \
+            --no-label "Online-Fix" \
+            --cancel-label "Abort"
+
+    RET=$?
+    if [ $RET -eq 0 ]; then
+        # Clicked "Offline (Wine)" (Yes button - Default focus)
+        MODE="offline"
+    elif [ $RET -eq 1 ]; then
+        # Clicked "Online-Fix (Proton)" (No button)
+        MODE="online"
+    else
+        # Clicked "Abort" or closed window (Cancel button)
+        exit 0
+    fi
+
+# 2. Fallback to Zenity (GNOME/others)
 elif command -v zenity &> /dev/null; then
-    INPUT_NAME=$(zenity --entry --title="Add to Lutris" --text="Enter game name:" --entry-text="$PRETTY_NAME")
-    [ $? -ne 0 ] && exit 0
+    # Zenity logic: OK=Offline (Default), Extra=Online, Cancel=Abort
+    ZENITY_OUT=$(zenity --entry --title="Add to Lutris" --text="Enter game name:" --entry-text="$PRETTY_NAME" --ok-label="Offline" --cancel-label="Abort" --extra-button="Online-Fix")
+    ZENITY_CODE=$?
+
+    if [ $ZENITY_CODE -eq 0 ]; then
+        # Clicked "Offline (Wine)" (OK)
+        MODE="offline"
+        INPUT_NAME="$ZENITY_OUT"
+    elif [ "$ZENITY_OUT" == "Online-Fix" ]; then
+        # Clicked "Online-Fix (Proton)" (Extra)
+        MODE="online"
+        INPUT_NAME="$PRETTY_NAME" # Fallback because extra button doesn't return input
+    else
+        # Clicked Abort or closed
+        exit 0
+    fi
+
 else
+    # Terminal fallback
     read -p "Enter game name [$PRETTY_NAME]: " INPUT_NAME
+    read -p "Mode (1=Offline, 2=Online-Fix) [1]: " MODE_SEL
+    if [ "$MODE_SEL" == "2" ]; then MODE="online"; else MODE="offline"; fi
 fi
 
 GAME_NAME="${INPUT_NAME:-$PRETTY_NAME}"
@@ -44,15 +93,13 @@ BANNERS_DIR="$LUT_DATA/banners"
 COVERART_DIR="$LUT_DATA/coverart"
 mkdir -p "$GAMES_DIR" "$BANNERS_DIR" "$COVERART_DIR" "$HOME/Games/Lutris/Prefixes/Default"
 
-# --- 1. DOWNLOAD ARTWORK ---
+# --- COMMON: DOWNLOAD ARTWORK ---
 SEARCH_TERM=$(echo "$GAME_NAME" | sed 's/ /%20/g')
 STEAM_SEARCH=$(curl -s "https://store.steampowered.com/api/storesearch/?term=${SEARCH_TERM}&l=english&cc=US")
 APP_ID=$(echo "$STEAM_SEARCH" | jq -r '.items[0].id // empty')
 
 if [ -n "$APP_ID" ]; then
-
-    # --- BANNER DOWNLOAD (Fixed) ---
-    # Strategy 1: Use App Details API (Most reliable for hashed URLs)
+    # BANNER
     DETAILS_API="https://store.steampowered.com/api/appdetails?appids=${APP_ID}"
     DETAILS_DATA=$(curl -s "$DETAILS_API")
     HEADER_URL=$(echo "$DETAILS_DATA" | jq -r ".[\"$APP_ID\"].data.header_image // empty")
@@ -61,19 +108,15 @@ if [ -n "$APP_ID" ]; then
         curl -f -s "$HEADER_URL" -o "${BANNERS_DIR}/${SLUG}.jpg"
     fi
 
-    # Strategy 2: Fallback to standard CDN path if API failed
     if [ ! -s "${BANNERS_DIR}/${SLUG}.jpg" ] || [ $(stat -c%s "${BANNERS_DIR}/${SLUG}.jpg") -lt 1000 ]; then
         curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/header.jpg" -o "${BANNERS_DIR}/${SLUG}.jpg"
     fi
 
-    # --- COVER ART DOWNLOAD (Fixed) ---
+    # COVER ART
     COVER_FOUND=0
-
-    # Strategy 1: API Assets (Cleanest way to get hashed paths)
     ASSETS_DATA=$(curl -s "https://store.steampowered.com/api/appdetails?appids=${APP_ID}&filters=assets")
     LIB_PATH=$(echo "$ASSETS_DATA" | jq -r ".[\"$APP_ID\"].data.library_assets.library_capsule // empty")
 
-    # If API gives us a path (e.g. "hash/library_capsule.jpg")
     if [ -n "$LIB_PATH" ] && [ "$LIB_PATH" != "null" ]; then
         curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/${LIB_PATH}" -o "${COVERART_DIR}/${SLUG}.jpg"
         if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
@@ -81,7 +124,6 @@ if [ -n "$APP_ID" ]; then
         fi
     fi
 
-    # Strategy 2: Standard Filenames (Old games)
     if [ $COVER_FOUND -eq 0 ]; then
         for COVER_FILE in "library_600x900_2x" "library_600x900"; do
             curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/${COVER_FILE}.jpg" -o "${COVERART_DIR}/${SLUG}.jpg"
@@ -92,12 +134,8 @@ if [ -n "$APP_ID" ]; then
         done
     fi
 
-    # Strategy 3: Deep HTML Scrape (For the tricky games)
     if [ $COVER_FOUND -eq 0 ]; then
         STORE_HTML=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "https://store.steampowered.com/app/${APP_ID}/")
-
-        # Look for library_capsule (New standard) OR library_600x900 (Old standard)
-        # We use double quotes for grep to handle regex properly
         SCRAPED_URL=$(echo "$STORE_HTML" | grep -oP "https?:[^\"' ]+?steamstatic\.com[^\"' ]+?library_(capsule|600x900)(_2x)?\.jpg" | sed 's/\\//g' | head -n 1)
 
         if [ -n "$SCRAPED_URL" ]; then
@@ -111,7 +149,7 @@ if [ -n "$APP_ID" ]; then
     fi
 fi
 
-# --- 2. ICON EXTRACTION ---
+# --- COMMON: ICON EXTRACTION ---
 if command -v wrestool &> /dev/null && command -v icotool &> /dev/null; then
     T_DIR=$(mktemp -d)
     wrestool -x -t 14 "$EXE_PATH" -o "$T_DIR/temp.ico" 2>/dev/null
@@ -132,23 +170,74 @@ if command -v wrestool &> /dev/null && command -v icotool &> /dev/null; then
     rm -rf "$T_DIR"
 fi
 
-# --- 3. LUTRIS CONFIG ---
+# --- BRANCHING LOGIC ---
 GAME_ID=$(shuf -i 1000000000-9999999999 -n 1)
-cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
+RUNNER=""
+CONFIG_EXE=""
+
+if [ "$MODE" = "online" ]; then
+    # === ONLINE MODE (Proton) ===
+    RUNNER_SCRIPT="$GAME_DIR/add_to_lutris_online_run.sh"
+
+    cat <<EOF > "$RUNNER_SCRIPT"
+#!/bin/bash
+
+# --- CONFIGURATION ---
+RUNTIME="\$HOME/.steam/steam/steamapps/common/SteamLinuxRuntime_sniper/run"
+PROTON="\$HOME/.local/share/Steam/compatibilitytools.d/Proton-GE Latest/proton"
+GAME_EXE="$EXE_PATH"
+PREFIX="\$HOME/Games/Lutris/Prefixes/Default"
+
+# --- ENVIRONMENT VARIABLES ---
+export STEAM_COMPAT_DATA_PATH="\$PREFIX"
+export STEAM_COMPAT_CLIENT_INSTALL_PATH="\$HOME/.steam/steam"
+export SteamOverlayGameId=480
+export ENABLE_VK_LAYER_VALVE_steam_overlay_1=1
+export LD_PRELOAD="\$HOME/.local/share/Steam/ubuntu12_32/gameoverlayrenderer.so:\$HOME/.local/share/Steam/ubuntu12_64/gameoverlayrenderer.so"
+export WINEDLLOVERRIDES="OnlineFix64=n,b;SteamOverlay64=n,b;steam_api64=n,b;winhttp=n,b;winmm=n,b;dnet=n;"
+
+# --- EXECUTION ---
+"\$RUNTIME" -- "\$PROTON" run "\$GAME_EXE"
+EOF
+
+    chmod +x "$RUNNER_SCRIPT"
+
+    CONFIG_EXE="$RUNNER_SCRIPT"
+    RUNNER="linux"
+
+    # Create Lutris Config
+    cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
 game:
-  exe: '$EXE_PATH'
+  exe: '$CONFIG_EXE'
+  working_dir: '$GAME_DIR'
+name: '$GAME_NAME'
+runner: linux
+slug: '$SLUG'
+EOF
+
+else
+    # === OFFLINE MODE (Wine) ===
+    CONFIG_EXE="$EXE_PATH"
+    RUNNER="wine"
+
+    # Create Lutris Config
+    cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
+game:
+  exe: '$CONFIG_EXE'
   prefix: '$HOME/Games/Lutris/Prefixes/Default'
 name: '$GAME_NAME'
 runner: wine
 slug: '$SLUG'
 EOF
-
-DB_PATH="$LUT_DATA/pga.db"
-if [ -f "$DB_PATH" ] && command -v sqlite3 &> /dev/null; then
-    sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$GAME_NAME', '$SLUG', 'wine', 1, '$SLUG-$GAME_ID');"
 fi
 
-# --- 4. DESKTOP SHORTCUT ---
+# --- UPDATE DATABASE ---
+DB_PATH="$LUT_DATA/pga.db"
+if [ -f "$DB_PATH" ] && command -v sqlite3 &> /dev/null; then
+    sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$GAME_NAME', '$SLUG', '$RUNNER', 1, '$SLUG-$GAME_ID');"
+fi
+
+# --- DESKTOP SHORTCUT ---
 DESK_FILE="$(xdg-user-dir DESKTOP)/$GAME_NAME.desktop"
 cat <<EOF > "$DESK_FILE"
 [Desktop Entry]
@@ -160,4 +249,4 @@ Categories=Game
 EOF
 chmod +x "$DESK_FILE"
 
-notify-send "Lutris" "Added '$GAME_NAME' successfully!" --icon="lutris_$SLUG"
+notify-send "Lutris" "Added '$GAME_NAME' ($MODE) successfully!" --icon="lutris_$SLUG"
