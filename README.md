@@ -4,6 +4,8 @@ A universal Bash script that allows you to add Windows executables (`.exe`) dire
 
 It automates the boring parts: fetching official artwork from Steam, extracting high-quality icons, configuring a centralized Wine prefix, and creating desktop shortcuts.
 
+**New in this version:** The script now supports **two launch modes**. You can choose between **Offline Mode** for offline games or **Online-Fix Mode** for steam-online games via a user-friendly dialog.
+
 ## Project Files
 
 Before installing, understand what each file does:
@@ -13,11 +15,14 @@ Before installing, understand what each file does:
 
 ## Features
 
+*   **Dual Launch Modes:**
+    *   **Offline:** Standard Lutris configuration using the Proton runner.
+    *   **Online-Fix:** Creates a launch script using Steam Runtime and Proton, added to Lutris as a "Linux" runner. Perfect for multiplayer fixes.
+*   **Interactive Mode Selection:** A graphical dialog allows you to choose the mode (Offline, Online-Fix, or Abort) after naming the game.
 *   **Steam Artwork Integration:** Automatically searches Steam for the game name and downloads the official Banner and Cover Art. No more blank covers!
 *   **Smart Icon Handling:** Extracts the highest resolution icon from the executable, resizes it to 128x128 (Lutris standard), and installs it into the system icon theme for perfect integration.
 *   **Universal Compatibility:** Works on Native and Flatpak installations of Lutris.
-*   **Desktop Environment Agnostic:** Supports `kdialog` (KDE) and `zenity` (GNOME/Others) for GUI prompts, with a terminal fallback.
-*   **Interactive Naming:** Prompts for the game name to ensure accurate matching for artwork.
+*   **Desktop Environment Agnostic:** Prioritizes `kdialog` (KDE) for native look-and-feel, with fallback to `zenity` (GNOME/Others) and terminal.
 *   **Centralized Prefix:** Uses a standard Wine prefix path (`$HOME/Games/Lutris/Prefixes/Default`) to keep your system organized.
 
 ## Prerequisites
@@ -43,6 +48,10 @@ sudo apt install sqlite3 icoutils jq imagemagick
 **Optional (for GUI dialogs):**
 *   **KDE Plasma:** `kdialog` (usually pre-installed).
 *   **GNOME / Cinnamon:** `zenity` (usually pre-installed).
+
+**Required for "Online-Fix" Mode:**
+*   **Steam Runtime:** Ensure `SteamLinuxRuntime_sniper` is installed in Steam.
+*   **Proton:** Ensure a version of Proton (e.g., Proton-GE) is available. The script defaults to `Proton-GE Latest`.
 
 ## Installation
 
@@ -118,20 +127,25 @@ add_to_lutris.sh "/path/to/game.exe"
 2.  Right-click any `.exe` file.
     *   **Dolphin:** Select **"Add to Lutris"**.
     *   **Nautilus/Nemo:** Select **Scripts** -> **Add to Lutris**.
-3.  Enter the desired game name in the popup dialog (pre-filled from filename).
-4.  Done! The game will appear in Lutris with official artwork and a desktop shortcut.
+3.  **Enter Game Name:** A dialog will appear with a suggested name. Edit it if needed and confirm.
+4.  **Select Mode:** A second dialog will ask you to choose the launch mode:
+    *   **Offline:** Default selection. Configures the game to run with standard Wine.
+    *   **Online-Fix:** Configures the game to run with Proton with fixes to make online-fix work via a generated `.sh` script.
+    *   **Abort:** Cancels the operation.
+5.  Done! The game will appear in Lutris with official artwork and a desktop shortcut.
 
 ## Configuration
 
+### Wine Prefix
 By default, the script uses a centralized Wine prefix located at:
 `$HOME/Games/Lutris/Prefixes/Default`
 
-To use a different path, edit the `CUSTOM_PREFIX` variable inside `add_to_lutris.sh`:
+### Proton / Steam Runtime (For Online Mode)
+If you select "Online-Fix", the script generates a launcher file (`add_to_lutris_online_run.sh`) next to your game executable. By default, it points to:
+*   **Runtime:** `$HOME/.steam/steam/steamapps/common/SteamLinuxRuntime_sniper/run`
+*   **Proton:** `$HOME/.local/share/Steam/compatibilitytools.d/Proton-GE Latest/proton`
 
-```bash
-# --- CUSTOM WINE PREFIX CONFIGURATION ---
-CUSTOM_PREFIX="$HOME/Your/Custom/Path"
-```
+To change these paths, you can edit the generated `.sh` file in your game folder, or modify the template variables inside `add_to_lutris.sh` (search for the `CREATE LAUNCH SCRIPT` section).
 
 ## Contributing
 
