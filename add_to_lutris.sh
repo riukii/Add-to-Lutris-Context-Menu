@@ -24,15 +24,9 @@ MODE=""
 
 # 1. Check KDialog FIRST (Native KDE)
 if command -v kdialog &> /dev/null; then
-    # Step 1: Ask for Name (Standard Ok/Cancel dialog)
     INPUT_NAME=$(kdialog --title "Add to Lutris" --inputbox "Enter game name:" "$PRETTY_NAME")
+    if [ $? -ne 0 ]; then exit 0; fi
 
-    # If user cancels the name input, exit immediately
-    if [ $? -ne 0 ]; then
-        exit 0
-    fi
-
-    # Step 2: Ask for Mode (Three buttons: Yes=Standard, No=Online, Cancel=Abort)
     kdialog --title "Select Mode" \
             --yesnocancel "Choose launch mode for '$INPUT_NAME':" \
             --yes-label "Standard" \
@@ -40,38 +34,27 @@ if command -v kdialog &> /dev/null; then
             --cancel-label "Abort"
 
     RET=$?
-    if [ $RET -eq 0 ]; then
-        # Clicked "Standard" (Yes button - Default focus)
-        MODE="standard"
-    elif [ $RET -eq 1 ]; then
-        # Clicked "Online-Fix" (No button)
-        MODE="online"
-    else
-        # Clicked "Abort" or closed window (Cancel button)
-        exit 0
+    if [ $RET -eq 0 ]; then MODE="standard"
+    elif [ $RET -eq 1 ]; then MODE="online"
+    else exit 0
     fi
 
 # 2. Fallback to Zenity (GNOME/others)
 elif command -v zenity &> /dev/null; then
-    # Zenity logic: OK=Standard (Default), Extra=Online, Cancel=Abort
     ZENITY_OUT=$(zenity --entry --title="Add to Lutris" --text="Enter game name:" --entry-text="$PRETTY_NAME" --ok-label="Standard" --cancel-label="Abort" --extra-button="Online-Fix")
     ZENITY_CODE=$?
 
     if [ $ZENITY_CODE -eq 0 ]; then
-        # Clicked "Standard" (OK)
         MODE="standard"
         INPUT_NAME="$ZENITY_OUT"
     elif [ "$ZENITY_OUT" == "Online-Fix" ]; then
-        # Clicked "Online-Fix" (Extra)
         MODE="online"
-        INPUT_NAME="$PRETTY_NAME" # Fallback because extra button doesn't return input
+        INPUT_NAME="$PRETTY_NAME"
     else
-        # Clicked Abort or closed
         exit 0
     fi
 
 else
-    # Terminal fallback
     read -p "Enter game name [$PRETTY_NAME]: " INPUT_NAME
     read -p "Mode (1=Standard, 2=Online-Fix) [1]: " MODE_SEL
     if [ "$MODE_SEL" == "2" ]; then MODE="online"; else MODE="standard"; fi
@@ -89,97 +72,125 @@ else
     GAMES_DIR="$HOME/.config/lutris/games"
 fi
 
-BANNERS_DIR="$LUT_DATA/banners"
-COVERART_DIR="$LUT_DATA/coverart"
-mkdir -p "$GAMES_DIR" "$BANNERS_DIR" "$COVERART_DIR" "$HOME/Games/Lutris/Prefixes/Default"
+mkdir -p "$GAMES_DIR"
 
-# --- COMMON: DOWNLOAD ARTWORK ---
-SEARCH_TERM=$(echo "$GAME_NAME" | sed 's/ /%20/g')
-STEAM_SEARCH=$(curl -s "https://store.steampowered.com/api/storesearch/?term=${SEARCH_TERM}&l=english&cc=US")
-APP_ID=$(echo "$STEAM_SEARCH" | jq -r '.items[0].id // empty')
-
-if [ -n "$APP_ID" ]; then
-    # BANNER
-    DETAILS_API="https://store.steampowered.com/api/appdetails?appids=${APP_ID}"
-    DETAILS_DATA=$(curl -s "$DETAILS_API")
-    HEADER_URL=$(echo "$DETAILS_DATA" | jq -r ".[\"$APP_ID\"].data.header_image // empty")
-
-    if [ -n "$HEADER_URL" ]; then
-        curl -f -s "$HEADER_URL" -o "${BANNERS_DIR}/${SLUG}.jpg"
-    fi
-
-    if [ ! -s "${BANNERS_DIR}/${SLUG}.jpg" ] || [ $(stat -c%s "${BANNERS_DIR}/${SLUG}.jpg") -lt 1000 ]; then
-        curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/header.jpg" -o "${BANNERS_DIR}/${SLUG}.jpg"
-    fi
-
-    # COVER ART
-    COVER_FOUND=0
-    ASSETS_DATA=$(curl -s "https://store.steampowered.com/api/appdetails?appids=${APP_ID}&filters=assets")
-    LIB_PATH=$(echo "$ASSETS_DATA" | jq -r ".[\"$APP_ID\"].data.library_assets.library_capsule // empty")
-
-    if [ -n "$LIB_PATH" ] && [ "$LIB_PATH" != "null" ]; then
-        curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/${LIB_PATH}" -o "${COVERART_DIR}/${SLUG}.jpg"
-        if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
-            COVER_FOUND=1
-        fi
-    fi
-
-    if [ $COVER_FOUND -eq 0 ]; then
-        for COVER_FILE in "library_600x900_2x" "library_600x900"; do
-            curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/${COVER_FILE}.jpg" -o "${COVERART_DIR}/${SLUG}.jpg"
-            if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
-                COVER_FOUND=1
-                break
-            fi
-        done
-    fi
-
-    if [ $COVER_FOUND -eq 0 ]; then
-        STORE_HTML=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "https://store.steampowered.com/app/${APP_ID}/")
-        SCRAPED_URL=$(echo "$STORE_HTML" | grep -oP "https?:[^\"' ]+?steamstatic\.com[^\"' ]+?library_(capsule|600x900)(_2x)?\.jpg" | sed 's/\\//g' | head -n 1)
-
-        if [ -n "$SCRAPED_URL" ]; then
-            curl -f -s "$SCRAPED_URL" -o "${COVERART_DIR}/${SLUG}.jpg"
-            if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
-                COVER_FOUND=1
-            else
-                rm -f "${COVERART_DIR}/${SLUG}.jpg"
-            fi
-        fi
-    fi
-fi
-
-# --- COMMON: ICON EXTRACTION ---
-if command -v wrestool &> /dev/null && command -v icotool &> /dev/null; then
-    T_DIR=$(mktemp -d)
-    wrestool -x -t 14 "$EXE_PATH" -o "$T_DIR/temp.ico" 2>/dev/null
-    if [ -s "$T_DIR/temp.ico" ]; then
-        icotool -x -o "$T_DIR" "$T_DIR/temp.ico" 2>/dev/null
-        B_ICON=$(find "$T_DIR" -name "*.png" -exec ls -S {} + 2>/dev/null | head -n 1)
-        if [ -n "$B_ICON" ]; then
-            I_DEST="$HOME/.local/share/icons/hicolor/128x128/apps"
-            mkdir -p "$I_DEST"
-            if command -v convert &> /dev/null; then
-                convert "$B_ICON" -resize 128x128 "${I_DEST}/lutris_${SLUG}.png"
-            else
-                cp "$B_ICON" "${I_DEST}/lutris_${SLUG}.png"
-            fi
-            gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor/" 2>/dev/null
-        fi
-    fi
-    rm -rf "$T_DIR"
-fi
-
-# --- BRANCHING LOGIC ---
-GAME_ID=$(shuf -i 1000000000-9999999999 -n 1)
-RUNNER=""
-CONFIG_EXE=""
-
+# --- DUPLICATE CHECK ---
+# Determine expected exe path for comparison based on mode
 if [ "$MODE" = "online" ]; then
-    # === ONLINE-FIX MODE ===
-    RUNNER_SCRIPT="$GAME_DIR/add_to_lutris_online_run.sh"
+    CHECK_EXE="$GAME_DIR/add_to_lutris_online_run.sh"
+else
+    CHECK_EXE="$EXE_PATH"
+fi
 
-    cat <<EOF > "$RUNNER_SCRIPT"
+EXISTING_ID=""
+# Search for yml files starting with the slug
+for yml_file in "$GAMES_DIR"/${SLUG}-*.yml; do
+    if [ -f "$yml_file" ]; then
+        # Extract exe path from yml (handles quotes)
+        YML_EXE=$(grep -E "^\s*exe:" "$yml_file" | sed -E "s/^\s*exe:\s*['\"]?([^'\"]+)['\"]?\s*$/\1/" | head -n 1)
+
+        if [ "$YML_EXE" = "$CHECK_EXE" ]; then
+            # Extract ID from filename (slug-ID.yml)
+            filename=$(basename "$yml_file")
+            EXISTING_ID=$(echo "$filename" | sed -E "s/^${SLUG}-([0-9]+)\.yml$/\1/")
+            break
+        fi
+    fi
+done
+
+if [ -n "$EXISTING_ID" ]; then
+    GAME_ID=$EXISTING_ID
+else
+    # --- NEW GAME SETUP ---
+
+    BANNERS_DIR="$LUT_DATA/banners"
+    COVERART_DIR="$LUT_DATA/coverart"
+    mkdir -p "$BANNERS_DIR" "$COVERART_DIR" "$HOME/Games/Lutris/Prefixes/Default"
+
+    # --- DOWNLOAD ARTWORK ---
+    SEARCH_TERM=$(echo "$GAME_NAME" | sed 's/ /%20/g')
+    STEAM_SEARCH=$(curl -s "https://store.steampowered.com/api/storesearch/?term=${SEARCH_TERM}&l=english&cc=US")
+    APP_ID=$(echo "$STEAM_SEARCH" | jq -r '.items[0].id // empty')
+
+    if [ -n "$APP_ID" ]; then
+        DETAILS_API="https://store.steampowered.com/api/appdetails?appids=${APP_ID}"
+        DETAILS_DATA=$(curl -s "$DETAILS_API")
+        HEADER_URL=$(echo "$DETAILS_DATA" | jq -r ".[\"$APP_ID\"].data.header_image // empty")
+
+        if [ -n "$HEADER_URL" ]; then
+            curl -f -s "$HEADER_URL" -o "${BANNERS_DIR}/${SLUG}.jpg"
+        fi
+
+        if [ ! -s "${BANNERS_DIR}/${SLUG}.jpg" ] || [ $(stat -c%s "${BANNERS_DIR}/${SLUG}.jpg") -lt 1000 ]; then
+            curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/header.jpg" -o "${BANNERS_DIR}/${SLUG}.jpg"
+        fi
+
+        COVER_FOUND=0
+        ASSETS_DATA=$(curl -s "https://store.steampowered.com/api/appdetails?appids=${APP_ID}&filters=assets")
+        LIB_PATH=$(echo "$ASSETS_DATA" | jq -r ".[\"$APP_ID\"].data.library_assets.library_capsule // empty")
+
+        if [ -n "$LIB_PATH" ] && [ "$LIB_PATH" != "null" ]; then
+            curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/${LIB_PATH}" -o "${COVERART_DIR}/${SLUG}.jpg"
+            if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
+                COVER_FOUND=1
+            fi
+        fi
+
+        if [ $COVER_FOUND -eq 0 ]; then
+            for COVER_FILE in "library_600x900_2x" "library_600x900"; do
+                curl -f -s "https://cdn.akamai.steamstatic.com/steam/apps/${APP_ID}/${COVER_FILE}.jpg" -o "${COVERART_DIR}/${SLUG}.jpg"
+                if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
+                    COVER_FOUND=1
+                    break
+                fi
+            done
+        fi
+
+        if [ $COVER_FOUND -eq 0 ]; then
+            STORE_HTML=$(curl -s -L -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" "https://store.steampowered.com/app/${APP_ID}/")
+            SCRAPED_URL=$(echo "$STORE_HTML" | grep -oP "https?:[^\"' ]+?steamstatic\.com[^\"' ]+?library_(capsule|600x900)(_2x)?\.jpg" | sed 's/\\//g' | head -n 1)
+            if [ -n "$SCRAPED_URL" ]; then
+                curl -f -s "$SCRAPED_URL" -o "${COVERART_DIR}/${SLUG}.jpg"
+                if [ -s "${COVERART_DIR}/${SLUG}.jpg" ] && [ $(stat -c%s "${COVERART_DIR}/${SLUG}.jpg") -gt 1000 ]; then
+                    COVER_FOUND=1
+                else
+                    rm -f "${COVERART_DIR}/${SLUG}.jpg"
+                fi
+            fi
+        fi
+    fi
+
+    # --- ICON EXTRACTION ---
+    if command -v wrestool &> /dev/null && command -v icotool &> /dev/null; then
+        T_DIR=$(mktemp -d)
+        wrestool -x -t 14 "$EXE_PATH" -o "$T_DIR/temp.ico" 2>/dev/null
+        if [ -s "$T_DIR/temp.ico" ]; then
+            icotool -x -o "$T_DIR" "$T_DIR/temp.ico" 2>/dev/null
+            B_ICON=$(find "$T_DIR" -name "*.png" -exec ls -S {} + 2>/dev/null | head -n 1)
+            if [ -n "$B_ICON" ]; then
+                I_DEST="$HOME/.local/share/icons/hicolor/128x128/apps"
+                mkdir -p "$I_DEST"
+                if command -v convert &> /dev/null; then
+                    convert "$B_ICON" -resize 128x128 "${I_DEST}/lutris_${SLUG}.png"
+                else
+                    cp "$B_ICON" "${I_DEST}/lutris_${SLUG}.png"
+                fi
+                gtk-update-icon-cache -f "$HOME/.local/share/icons/hicolor/" 2>/dev/null
+            fi
+        fi
+        rm -rf "$T_DIR"
+    fi
+
+    # --- BRANCHING LOGIC ---
+    GAME_ID=$(shuf -i 1000000000-9999999999 -n 1)
+    RUNNER=""
+    CONFIG_EXE=""
+
+    if [ "$MODE" = "online" ]; then
+        # === ONLINE-FIX MODE ===
+        RUNNER_SCRIPT="$GAME_DIR/add_to_lutris_online_run.sh"
+
+        cat <<EOF > "$RUNNER_SCRIPT"
 #!/bin/bash
 
 # --- CONFIGURATION ---
@@ -200,13 +211,11 @@ export WINEDLLOVERRIDES="OnlineFix64=n,b;SteamOverlay64=n,b;steam_api64=n,b;winh
 "\$RUNTIME" -- "\$PROTON" run "\$GAME_EXE"
 EOF
 
-    chmod +x "$RUNNER_SCRIPT"
+        chmod +x "$RUNNER_SCRIPT"
+        CONFIG_EXE="$RUNNER_SCRIPT"
+        RUNNER="linux"
 
-    CONFIG_EXE="$RUNNER_SCRIPT"
-    RUNNER="linux"
-
-    # Create Lutris Config
-    cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
+        cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
 game:
   exe: '$CONFIG_EXE'
   working_dir: '$GAME_DIR'
@@ -215,13 +224,12 @@ runner: linux
 slug: '$SLUG'
 EOF
 
-else
-    # === STANDARD MODE ===
-    CONFIG_EXE="$EXE_PATH"
-    RUNNER="wine"
+    else
+        # === STANDARD MODE ===
+        CONFIG_EXE="$EXE_PATH"
+        RUNNER="wine"
 
-    # Create Lutris Config
-    cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
+        cat <<EOF > "$GAMES_DIR/${SLUG}-${GAME_ID}.yml"
 game:
   exe: '$CONFIG_EXE'
   prefix: '$HOME/Games/Lutris/Prefixes/Default'
@@ -229,16 +237,20 @@ name: '$GAME_NAME'
 runner: wine
 slug: '$SLUG'
 EOF
+    fi
+
+    # --- UPDATE DATABASE ---
+    DB_PATH="$LUT_DATA/pga.db"
+    if [ -f "$DB_PATH" ] && command -v sqlite3 &> /dev/null; then
+        sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$GAME_NAME', '$SLUG', '$RUNNER', 1, '$SLUG-$GAME_ID');"
+    fi
 fi
 
-# --- UPDATE DATABASE ---
-DB_PATH="$LUT_DATA/pga.db"
-if [ -f "$DB_PATH" ] && command -v sqlite3 &> /dev/null; then
-    sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$GAME_NAME', '$SLUG', '$RUNNER', 1, '$SLUG-$GAME_ID');"
-fi
+# --- APPLICATION SHORTCUT (For Start Menu) ---
+APPS_DIR="$HOME/.local/share/applications"
+mkdir -p "$APPS_DIR"
+DESK_FILE="$APPS_DIR/$GAME_NAME.desktop"
 
-# --- DESKTOP SHORTCUT ---
-DESK_FILE="$(xdg-user-dir DESKTOP)/$GAME_NAME.desktop"
 cat <<EOF > "$DESK_FILE"
 [Desktop Entry]
 Type=Application
@@ -249,4 +261,13 @@ Categories=Game
 EOF
 chmod +x "$DESK_FILE"
 
-notify-send "Lutris" "Added '$GAME_NAME' ($MODE) successfully!" --icon="lutris_$SLUG"
+if command -v update-desktop-database &> /dev/null; then
+    update-desktop-database "$APPS_DIR" 2>/dev/null
+fi
+
+# --- DESKTOP LINK (Symlink) ---
+DESKTOP_DIR=$(xdg-user-dir DESKTOP)
+# Create symlink pointing to the application shortcut, without .desktop extension
+ln -sf "$DESK_FILE" "$DESKTOP_DIR/$GAME_NAME"
+
+notify-send "Lutris" "Shortcuts for '$GAME_NAME' created successfully!" --icon="lutris_$SLUG"
