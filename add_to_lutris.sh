@@ -5,6 +5,10 @@ if ! command -v jq &> /dev/null; then
     notify-send "Lutris Error" "Missing dependency: 'jq'. Please install it." --icon=dialog-error
     exit 1
 fi
+if ! command -v sqlite3 &> /dev/null; then
+    notify-send "Lutris Error" "Missing dependency: 'sqlite3'. Please install it." --icon=dialog-error
+    exit 1
+fi
 
 # --- INPUT CHECK ---
 if [ -z "$1" ]; then
@@ -62,6 +66,23 @@ fi
 
 GAME_NAME="${INPUT_NAME:-$PRETTY_NAME}"
 SLUG=$(echo "$GAME_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g')
+
+# --- FIX: ENSURE SLUG IS UNIQUE IN DATABASE ---
+PRE_DB_PATH=""
+if [ -d "$HOME/.var/app/net.lutris.Lutris" ]; then
+    PRE_DB_PATH="$HOME/.var/app/net.lutris.Lutris/data/lutris/pga.db"
+else
+    PRE_DB_PATH="$HOME/.local/share/lutris/pga.db"
+fi
+
+if [ -f "$PRE_DB_PATH" ]; then
+    SAFE_SLUG_CHECK=$(echo "$SLUG" | sed "s/'/''/g")
+    SLUG_COUNT=$(sqlite3 "$PRE_DB_PATH" "SELECT COUNT(*) FROM games WHERE slug='$SAFE_SLUG_CHECK';" 2>/dev/null)
+    if [ "$SLUG_COUNT" -gt 0 ]; then
+        RAND_SUFFIX=$(shuf -i 1000-9999 -n 1)
+        SLUG="${SLUG}-${RAND_SUFFIX}"
+    fi
+fi
 
 # --- DIRECTORY SETUP ---
 if [ -d "$HOME/.var/app/net.lutris.Lutris" ]; then
@@ -160,10 +181,8 @@ fi
 # --- COMMON: ICON EXTRACTION (IMPROVED ROBUSTNESS) ---
 if command -v wrestool &> /dev/null; then
     T_DIR=$(mktemp -d)
-    # Try extracting Type 14 (Group Icon)
     wrestool -x -t 14 "$EXE_PATH" > "$T_DIR/temp.ico" 2>/dev/null
 
-    # If empty, try Type 3 (Icon)
     if [ ! -s "$T_DIR/temp.ico" ]; then
         wrestool -x -t 3 "$EXE_PATH" > "$T_DIR/temp.ico" 2>/dev/null
     fi
@@ -171,21 +190,16 @@ if command -v wrestool &> /dev/null; then
     if [ -s "$T_DIR/temp.ico" ]; then
         B_ICON=""
 
-        # Method 1: icotool (Standard)
         if command -v icotool &> /dev/null; then
             icotool -x -o "$T_DIR" "$T_DIR/temp.ico" 2>/dev/null
-            # Find largest PNG
             B_ICON=$(find "$T_DIR" -name "*.png" -exec ls -S {} + 2>/dev/null | head -n 1)
         fi
 
-        # Method 2: ImageMagick Fallback (Handles high-res PNG icons better)
         if [ -z "$B_ICON" ] && command -v convert &> /dev/null; then
-            # Extract all frames from ICO to separate PNGs
             convert "$T_DIR/temp.ico" "$T_DIR/magick_%d.png" 2>/dev/null
             B_ICON=$(find "$T_DIR" -name "magick_*.png" -exec ls -S {} + 2>/dev/null | head -n 1)
         fi
 
-        # Process found icon
         if [ -n "$B_ICON" ]; then
             I_DEST="$HOME/.local/share/icons/hicolor/128x128/apps"
             mkdir -p "$I_DEST"
@@ -206,7 +220,6 @@ if [ "$IS_NEW_GAME" = true ]; then
     CONFIG_EXE=""
 
     if [ "$MODE" = "online" ]; then
-        # === ONLINE-FIX MODE ===
         RUNNER_SCRIPT="$GAME_DIR/add_to_lutris_online_run.sh"
 
         cat <<EOF > "$RUNNER_SCRIPT"
@@ -244,7 +257,6 @@ slug: '$SLUG'
 EOF
 
     else
-        # === STANDARD MODE ===
         CONFIG_EXE="$EXE_PATH"
         RUNNER="wine"
 
@@ -258,10 +270,20 @@ slug: '$SLUG'
 EOF
     fi
 
-    # --- UPDATE DATABASE (Only if new) ---
+    # --- FIX: ROBUST DATABASE UPDATE ---
     DB_PATH="$LUT_DATA/pga.db"
-    if [ -f "$DB_PATH" ] && command -v sqlite3 &> /dev/null; then
-        sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$GAME_NAME', '$SLUG', '$RUNNER', 1, '$SLUG-$GAME_ID');"
+    if [ -f "$DB_PATH" ]; then
+        # Sanitize strings to prevent SQL syntax errors (escapes single quotes)
+        SQL_NAME=$(echo "$GAME_NAME" | sed "s/'/''/g")
+        SQL_SLUG=$(echo "$SLUG" | sed "s/'/''/g")
+        SQL_CONFIGPATH=$(echo "${SLUG}-${GAME_ID}" | sed "s/'/''/g")
+
+        DB_ERROR=$(sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$SQL_NAME', '$SQL_SLUG', '$RUNNER', 1, '$SQL_CONFIGPATH');" 2>&1)
+
+        if [ $? -ne 0 ]; then
+            notify-send "Lutris DB Error" "Could not write to database.\nIs Lutris currently open? If so, close it and try again.\n\nDetails: $DB_ERROR" --icon=dialog-error
+            exit 1
+        fi
     fi
 fi
 
