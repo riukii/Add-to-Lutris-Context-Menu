@@ -74,9 +74,9 @@ Choose the instructions specific to the **File Manager** you use, regardless of 
 
 1.  Place the add_to_lutris.desktop file:
     ```bash
-    chmod +x path/to/add_to_lutris.desktop
     mkdir -p ~/.local/share/kio/servicemenus
     cp path/to/add_to_lutris.desktop ~/.local/share/kio/servicemenus/
+    chmod +x ~/.local/share/kio/servicemenus/add_to_lutris.desktop
     ```
 
 #### Option B: Nautilus (GNOME) & Nemo (Cinnamon) - not tested
