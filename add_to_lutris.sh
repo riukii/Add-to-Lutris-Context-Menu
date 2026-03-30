@@ -67,9 +67,14 @@ fi
 GAME_NAME="${INPUT_NAME:-$PRETTY_NAME}"
 SLUG=$(echo "$GAME_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g')
 
+IS_FLATPAK=false
+if command -v flatpak &> /dev/null && flatpak info net.lutris.Lutris &> /dev/null; then
+    IS_FLATPAK=true
+fi
+
 # --- FIX: ENSURE SLUG IS UNIQUE IN DATABASE ---
 PRE_DB_PATH=""
-if [ -d "$HOME/.var/app/net.lutris.Lutris" ]; then
+if [ "$IS_FLATPAK" = true ]; then
     PRE_DB_PATH="$HOME/.var/app/net.lutris.Lutris/data/lutris/pga.db"
 else
     PRE_DB_PATH="$HOME/.local/share/lutris/pga.db"
@@ -85,12 +90,16 @@ if [ -f "$PRE_DB_PATH" ]; then
 fi
 
 # --- DIRECTORY SETUP ---
-if [ -d "$HOME/.var/app/net.lutris.Lutris" ]; then
+if [ "$IS_FLATPAK" = true ]; then
     LUT_DATA="$HOME/.var/app/net.lutris.Lutris/data/lutris"
     GAMES_DIR="$HOME/.var/app/net.lutris.Lutris/config/lutris/games"
 else
     LUT_DATA="$HOME/.local/share/lutris"
-    GAMES_DIR="$HOME/.config/lutris/games"
+    if [ -d "$HOME/.config/lutris" ]; then
+        GAMES_DIR="$HOME/.config/lutris/games"
+    else
+        GAMES_DIR="$LUT_DATA/games"
+    fi
 fi
 
 BANNERS_DIR="$LUT_DATA/banners"
@@ -278,7 +287,8 @@ EOF
         SQL_SLUG=$(echo "$SLUG" | sed "s/'/''/g")
         SQL_CONFIGPATH=$(echo "${SLUG}-${GAME_ID}" | sed "s/'/''/g")
 
-        DB_ERROR=$(sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, configpath) VALUES ($GAME_ID, '$SQL_NAME', '$SQL_SLUG', '$RUNNER', 1, '$SQL_CONFIGPATH');" 2>&1)
+        SQL_INSTALLED_AT=$(date +%s)
+        DB_ERROR=$(sqlite3 "$DB_PATH" "INSERT INTO games (id, name, slug, runner, installed, installed_at, configpath) VALUES ($GAME_ID, '$SQL_NAME', '$SQL_SLUG', '$RUNNER', 1, $SQL_INSTALLED_AT, '$SQL_CONFIGPATH');" 2>&1)
 
         if [ $? -ne 0 ]; then
             notify-send "Lutris DB Error" "Could not write to database.\nIs Lutris currently open? If so, close it and try again.\n\nDetails: $DB_ERROR" --icon=dialog-error
